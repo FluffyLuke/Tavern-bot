@@ -50,11 +50,13 @@ impl EventHandler for Handler {
 #[tokio::main]
 async fn main() {
     
-    let token = "MTExNDk2NzE1NTY1ODcyMzQzMA.GHT-y5.6GLFIL-5ngz1SrhgAzWNbfDAlyI3Ou_cYCYOSg";
+    let args: Vec<String> = env::args().collect();
+
+    let token = &args[0];
 
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-    let mut client = Client::builder(token, intents)
+    let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
         .await.expect("Error accured why creating a bot instance");
 
