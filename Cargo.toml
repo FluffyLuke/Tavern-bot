@@ -17,3 +17,7 @@ features = ["macros", "signal", "rt-multi-thread"]
 [dependencies.serenity]
 git = "https://github.com/serenity-rs/serenity.git"
 features = ["cache", "framework", "standard_framework", "rustls_backend"]
+
+[dependencies.sqlx]
+version = "0.6.3"
+features = ["runtime-tokio-rustls", "sqlite", "offline"]
