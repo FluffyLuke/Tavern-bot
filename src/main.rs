@@ -53,7 +53,7 @@ async fn add_moderated_role(ctx: &Context, msg: &Message, args: Args) -> Command
     if let Some(id) = msg.guild_id {
         guild_id = id.to_string();
     } else {
-        msg.channel_id.say(&ctx.http, "Cannot get the guild id, sadge").await?;
+        msg.channel_id.say(&ctx.http, "This command must be used in guild").await?;
         return Ok(());
     }
 
@@ -97,7 +97,7 @@ async fn delete_moderated_role(ctx: &Context, msg: &Message, _args: Args) -> Com
     if let Some(id) = msg.guild_id {
         guild_id = id.to_string();
     } else {
-        msg.channel_id.say(&ctx.http, "Cannot get the guild id, sadge").await?;
+        msg.channel_id.say(&ctx.http, "This command must be used in guild").await?;
         return Ok(());
     }
     {
@@ -119,7 +119,7 @@ async fn add_words_to_moderate(ctx: &Context, msg: &Message, mut args: Args) -> 
     if let Some(id) = msg.guild_id {
         guild_id = id.to_string();
     } else {
-        msg.channel_id.say(&ctx.http, "Cannot get the guild id, sadge").await?;
+        msg.channel_id.say(&ctx.http, "This command must be used in guild").await?;
         return Ok(());
     }
     if args.len() == 0 {
@@ -149,7 +149,7 @@ async fn remove_words_to_moderate(ctx: &Context, msg: &Message, mut args: Args) 
     if let Some(id) = msg.guild_id {
         guild_id = id.to_string();
     } else {
-        msg.channel_id.say(&ctx.http, "Cannot get the guild id, sadge").await?;
+        msg.channel_id.say(&ctx.http, "This command must be used in guild").await?;
         return Ok(());
     }
     if args.len() == 0 {
@@ -175,7 +175,7 @@ async fn remove_words_to_moderate(ctx: &Context, msg: &Message, mut args: Args) 
 }
 
 #[group]
-#[commands ("say", "make_sandwich")]
+#[commands ("say", "make_sandwich", "see_banned_words")]
 struct General;
 
 #[command]
@@ -206,7 +206,37 @@ async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
+#[command]
+async fn see_banned_words(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let mut response = MessageBuilder::new();
+    let query;
+    let guild_id;
 
+    if let Some(id) = msg.guild_id {
+        guild_id = id.to_string()
+    } else {
+        msg.channel_id.say(&ctx.http, "This command must be used in guild").await?;
+        return Ok(());
+    }
+
+    {
+        let data_read = ctx.data.write().await;
+        let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
+        let database = database_lock.write().await;
+
+        query = sqlx::query!("SELECT * FROM banned_words where guild_id = ?", guild_id)
+            .fetch_all(&*database)
+            .await?;
+    }
+    response.push("List of banned words: ");
+    for word in query.iter() {
+        response.push_bold(word.banned_word.as_str());
+        response.push(", ");
+    }
+    response.build();
+    msg.channel_id.say(&ctx.http, &response).await?;
+    Ok(())
+}
 
 #[hook]
 async fn unknown_command(ctx: &Context, msg: &Message, _unknown_command_name: &str) {
@@ -330,7 +360,6 @@ impl EventHandler for Handler {
             if let Ok(_) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("cannot parse the id")).await {
                 for row in rows.iter() {
                     let word: String = row.get("banned_word");
-                    println!("{word}");
                     if msg.content.contains(&word) {
                         msg.delete(&ctx.http).await.expect("Cannot delete a message");
                         let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(word).build();
