@@ -9,6 +9,7 @@ edition = "2021"
 dotenv = "0.15"
 tracing = "0.1.23"
 tracing-subscriber = "0.3.17"
+rand = "0.8.5"
 
 [dependencies.tokio]
 version = "1.0"

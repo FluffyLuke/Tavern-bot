@@ -2,6 +2,7 @@ use core::panic;
 use std::{env, /*clone*/};
 use std::collections::{HashSet, /*HashMap*/};
 use std::sync::Arc;
+use std::fs;
 
 use serenity::utils::MessageBuilder;
 use serenity::{async_trait};
@@ -9,30 +10,19 @@ use serenity::http::Http;
 use serenity::framework::standard::macros::{/*check,*/ /*command,*/ group, /*help*/};
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
-//use tracing::{error, info};
 use serenity::model::channel::{/*Channel,*/ Message};
-//use serenity::utils::{content_safe, ContentSafeOptions};
-use serenity::framework::standard::{
-    //help_commands,
-    //Args,
-    //CommandGroup,
-    //CommandOptions,
-    //CommandResult,
-    //DispatchError,
-    //HelpOptions,
-    //Reason,
-    StandardFramework,
-};
+use serenity::framework::standard::StandardFramework;
 use sqlx::Row;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteConnectOptions};
 
 mod commands;
 mod database;
 mod hooks;
+mod quotes;
+use crate::quotes::Quotes;
 use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*};
 use crate::database::Database;
 use crate::hooks::unknown_command::unknown_command;
-
 
 #[group]
 #[owners_only]
@@ -50,7 +40,6 @@ struct General;
 
 #[tokio::main]
 async fn main() {
-
     dotenv::dotenv().expect("Failed to load .env file. You should create .env file with prefix, token and database url variables");
     let token = env::var("DISCORD_BOT_KEY").expect("Bot's key in not defined in environmental variables");
     let prefix = env::var("DISCORD_BOT_PREFIX").expect("Bot's prefix is not defined in environmental variables");
@@ -90,9 +79,29 @@ async fn main() {
         .framework(framework)
         .await.expect("Error when creating a bot instance");
 
+
+    let mean_quotes: Vec<String> = fs::read_to_string("./barman_quotes/mean_quotes.txt")
+            .expect("Cannot read mean quotes")
+            .lines()
+            .map(String::from)
+            .collect();
+    let neutral_quotes: Vec<String> = fs::read_to_string("./barman_quotes/neutral_quotes.txt")
+        .expect("Cannot read neutral quotes")
+        .lines()
+        .map(String::from)
+        .collect();
+    let pleasant_quotes: Vec<String> = fs::read_to_string("./barman_quotes/pleasant_quotes.txt")
+            .expect("Cannot read pleasant quotes")
+            .lines()
+            .map(String::from)
+            .collect();
+
+    let quotes = Quotes::new(mean_quotes, neutral_quotes, pleasant_quotes);
+    println!("{}", quotes.random_neutral_quote());
     {
         let mut data = client.data.write().await;
         data.insert::<Database>(Arc::new(RwLock::new(database)));
+        data.insert::<Quotes>(Arc::new(RwLock::new(quotes)))
     }
 
     if let Err(err) = client.start().await {
@@ -141,7 +150,7 @@ impl EventHandler for Handler {
                 }
             }
             if let Ok(rows) = banned_words {
-                if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("cannot parse the id")).await {
+                if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("Cannot parse the id")).await {
                     for row in rows.iter() {
                         let banned_word: String = row.get("banned_word");
                         if msg.content.contains(&banned_word) {
