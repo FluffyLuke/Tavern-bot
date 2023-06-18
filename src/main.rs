@@ -51,9 +51,9 @@ struct General;
 #[tokio::main]
 async fn main() {
 
-    dotenv::dotenv().expect("Failed to load .env file.");
-    let token = env::var("DISCORD_BOT_KEY").expect("Error accured while retrieving bots key: ");
-    let prefix = env::var("DISCORD_BOT_PREFIX").expect("Error accured while retrieving bots prefix: ");
+    dotenv::dotenv().expect("Failed to load .env file. You should create .env file with prefix, token and database url variables");
+    let token = env::var("DISCORD_BOT_KEY").expect("Bot's key in not defined in environmental variables");
+    let prefix = env::var("DISCORD_BOT_PREFIX").expect("Bot's prefix is not defined in environmental variables");
     let intents = GatewayIntents::all();
     tracing_subscriber::fmt::init();
 
@@ -88,7 +88,7 @@ async fn main() {
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
         .framework(framework)
-        .await.expect("Error accured why creating a bot instance");
+        .await.expect("Error when creating a bot instance");
 
     {
         let mut data = client.data.write().await;
@@ -114,48 +114,41 @@ impl EventHandler for Handler {
         if msg.author.bot {
             return;
         }
-
-        let guild_id;
         let moderated_role: String;
         let banned_words;
 
-        if let Some(id) = msg.guild_id {
-            guild_id = id;
-        } else {
-            panic!("Cannot retrieve Guild it ")
-        }
-
         //Check for banned words
-        {
-            let data_read = ctx.data.write().await;
-            let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
-            let database = database_lock.write().await;
+        if let Some(guild_id) = msg.guild_id {
+            {
+                let data_read = ctx.data.write().await;
+                let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
+                let database = database_lock.write().await;
 
-            let if_guild_role_exists = sqlx::query(&format!("SELECT role_id FROM guilds where guild_id = '{}'", &guild_id))
-                .fetch_one(&*database)
-                .await;
-            match if_guild_role_exists {
-                Ok(row) => { 
-                    moderated_role = row.get("role_id");
-                    banned_words = sqlx::query(&format!("SELECT banned_word FROM banned_words where guild_id = '{}'", &guild_id))
-                        .fetch_all(&*database)
-                        .await;
-                }
-                Err(err) => { 
-                    banned_words = Err(err);
-                    moderated_role = "".to_string();
+                let if_guild_role_exists = sqlx::query(&format!("SELECT role_id FROM guilds where guild_id = '{}'", &guild_id))
+                    .fetch_one(&*database)
+                    .await;
+                match if_guild_role_exists {
+                    Ok(row) => { 
+                        moderated_role = row.get("role_id");
+                        banned_words = sqlx::query(&format!("SELECT banned_word FROM banned_words where guild_id = '{}'", &guild_id))
+                            .fetch_all(&*database)
+                            .await;
+                    }
+                    Err(err) => { 
+                        banned_words = Err(err);
+                        moderated_role = "".to_string();
+                    }
                 }
             }
-        }
-
-        if let Ok(rows) = banned_words {
-            if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("cannot parse the id")).await {
-                for row in rows.iter() {
-                    let banned_word: String = row.get("banned_word");
-                    if msg.content.contains(&banned_word) {
-                        msg.delete(&ctx.http).await.expect("Cannot delete a message");
-                        let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(banned_word).build();
-                        msg.author.dm(&ctx.http, |m| m.content(&response) ).await.expect("Cannot send message");
+            if let Ok(rows) = banned_words {
+                if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("cannot parse the id")).await {
+                    for row in rows.iter() {
+                        let banned_word: String = row.get("banned_word");
+                        if msg.content.contains(&banned_word) {
+                            msg.delete(&ctx.http).await.expect("Cannot delete a message");
+                            let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(banned_word).build();
+                            msg.author.dm(&ctx.http, |m| m.content(&response) ).await.expect("Cannot send message");
+                        }
                     }
                 }
             }
