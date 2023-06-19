@@ -24,9 +24,10 @@ use crate::commands::{general_commands::*, test_commands::*, moderation_commands
 use crate::database::Database;
 use crate::hooks::unknown_command::unknown_command;
 
+
 #[group]
 #[owners_only]
-#[commands("test_command")]
+#[commands("test_command", "test_quotes")]
 struct Owners;
 
 #[group]

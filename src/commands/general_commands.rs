@@ -7,7 +7,7 @@ use serenity::client::Context;
 use serenity::model::prelude::Message;
 use serenity::utils::MessageBuilder;
 use crate::database::Database;
-
+use crate::quotes::Quotes;
 #[command]
 async fn make_sandwich(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let response = MessageBuilder::new()
@@ -16,6 +16,12 @@ async fn make_sandwich(ctx: &Context, msg: &Message, _args: Args) -> CommandResu
         .build();
     msg.channel_id.say(&ctx.http, response).await?;
     msg.channel_id.say(&ctx.http, "https://cdn.discordapp.com/attachments/744887025907400828/1118238901870543028/iu.png").await?;
+    {
+        let data_read = ctx.data.read().await;
+        let quote_lock = data_read.get::<Quotes>().expect("Cannot get quote lock");
+        let quotes = quote_lock.read().await;
+        msg.channel_id.say(&ctx.http, quotes.random_pleasant_quote()).await?;
+    }
     Ok(())
 }
 
@@ -24,7 +30,11 @@ async fn make_sandwich(ctx: &Context, msg: &Message, _args: Args) -> CommandResu
 async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let mut response: String = String::from("");
     if args.len() == 0 {
-        msg.reply(&ctx.http, "Say what you dumbass?").await.expect("Cannot reply to a message: "); 
+        let data_read = ctx.data.read().await;
+        let quote_lock = data_read.get::<Quotes>().expect("Cannot get quote lock");
+        let quotes = quote_lock.read().await;
+        msg.reply(&ctx.http, "Say what you dumbass?").await?;
+        msg.channel_id.say(&ctx.http, quotes.random_mean_quote()).await?;
     }
     for arg in args.iter::<String>() {
         match arg {
@@ -32,7 +42,7 @@ async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             Err(err) => { println!("Error while parsing arguments: {}", err) }
         }
     }
-    msg.reply(&ctx.http, response).await.expect("Cannot reply to a message: "); 
+    msg.reply(&ctx.http, response).await?; 
     Ok(())
 }
 
