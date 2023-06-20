@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::fs;
 
 use serenity::utils::MessageBuilder;
-use serenity::{async_trait};
+use serenity::async_trait;
 use serenity::http::Http;
 use serenity::framework::standard::macros::{/*check,*/ /*command,*/ group, /*help*/};
 use serenity::model::gateway::Ready;
@@ -14,6 +14,7 @@ use serenity::model::channel::{/*Channel,*/ Message};
 use serenity::framework::standard::StandardFramework;
 use sqlx::Row;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteConnectOptions};
+use serenity::model::prelude::Member;
 
 mod commands;
 mod database;
@@ -51,7 +52,7 @@ async fn main() {
         .max_connections(10)
         .connect_with(
             SqliteConnectOptions::new()
-                .filename("naughtylist.sqlite")
+                .filename("tavern-database.sqlite")
                 .create_if_missing(true),
         ).await.expect("Error connecting a database");
     sqlx::migrate!("./migrations").run(&database).await.expect("Couldn't run database migrations");
@@ -116,6 +117,30 @@ impl EventHandler for Handler {
     //On ready message
     async fn ready(&self, _: Context, ready: Ready) {
         println!("{} is connected!", ready.user.name);        
+    }
+
+    async fn guild_member_addition(&self, ctx: Context, mut new_member: Member) {
+        let query_basic_role;
+        let guild_id_str = new_member.guild_id.to_string();
+        {
+            let data_read = ctx.data.write().await;
+            let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
+            let database = database_lock.write().await;
+            query_basic_role = sqlx::query!("Select * from basic_role where guild_id = ?", guild_id_str)
+                .fetch_one(&*database)
+                .await;
+        }
+        let basic_role_str = match query_basic_role {
+            Ok(id) => id,
+            Err(err) => panic!("{err}")
+        };
+        let basic_role_u64 = match basic_role_str.role_id.parse::<u64>() {
+            Ok(id) => id,
+            Err(err) => panic!("{err}")
+        };
+        if let Err(err) = new_member.add_role(&ctx.http, basic_role_u64).await {
+            panic!("{err}");
+        }
     }
 
     async fn message(&self, ctx: Context, mut msg: Message) {

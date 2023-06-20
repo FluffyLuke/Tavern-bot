@@ -53,7 +53,7 @@ pub async fn add_moderated_role(ctx: &Context, msg: &Message, args: Args) -> Com
                 return Ok(());
             }
 
-            sqlx::query!("INSERT INTO guilds (guild_id, role_id) VALUES (?, ?)", guild_id, role_id)
+            sqlx::query!("INSERT INTO modetated_role (guild_id, role_id) VALUES (?, ?)", guild_id, role_id)
                 .execute(&*database)
                 .await?;
             msg.channel_id.say(&ctx.http, format!("Role <@{}> is now under surveilnce", role_id)).await?;
@@ -132,10 +132,6 @@ async fn add_words_to_moderate(ctx: &Context, msg: &Message, mut args: Args) -> 
         let data_read = ctx.data.write().await;
         let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
         let database = database_lock.write().await;
-        let data_read = ctx.data.read().await;
-        let quote_lock = data_read.get::<Quotes>().expect("Cannot get quote lock");
-        let quotes = quote_lock.read().await;
-
         for arg in args.iter::<String>() {
             if let Ok(word) = arg {
                 let word_lower_case = word.to_lowercase();
@@ -144,6 +140,12 @@ async fn add_words_to_moderate(ctx: &Context, msg: &Message, mut args: Args) -> 
                     .await?;
             }
         }
+    }
+    msg.reply(&ctx.http, "All done. This words will be deleted").await?; 
+    {    
+        let data_read = ctx.data.read().await;
+        let quote_lock = data_read.get::<Quotes>().expect("Cannot get quote lock");
+        let quotes = quote_lock.read().await;
         msg.reply(&ctx.http, "All done. This words will be deleted").await?; 
         msg.channel_id.say(&ctx.http, quotes.random_neutral_quote()).await?; 
     }
