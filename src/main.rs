@@ -20,11 +20,12 @@ mod commands;
 mod database;
 mod hooks;
 mod quotes;
+mod utils;
 use crate::quotes::Quotes;
 use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*};
 use crate::database::Database;
 use crate::hooks::unknown_command::unknown_command;
-
+use utils::*;
 
 #[group]
 #[owners_only]
@@ -47,7 +48,6 @@ async fn main() {
     let prefix = env::var("DISCORD_BOT_PREFIX").expect("Bot's prefix is not defined in environmental variables");
     let intents = GatewayIntents::all();
     tracing_subscriber::fmt::init();
-
     let database = SqlitePoolOptions::new()
         .max_connections(10)
         .connect_with(
@@ -126,7 +126,7 @@ impl EventHandler for Handler {
             let data_read = ctx.data.write().await;
             let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
             let database = database_lock.write().await;
-            query_basic_role = sqlx::query!("Select * from basic_role where guild_id = ?", guild_id_str)
+            query_basic_role = sqlx::query!("Select basic_role_id from guild where guild_id = ?", guild_id_str)
                 .fetch_one(&*database)
                 .await;
         }
@@ -134,7 +134,7 @@ impl EventHandler for Handler {
             Ok(id) => id,
             Err(err) => panic!("{err}")
         };
-        let basic_role_u64 = match basic_role_str.role_id.parse::<u64>() {
+        let basic_role_u64 = match basic_role_str.basic_role_id.parse::<u64>() {
             Ok(id) => id,
             Err(err) => panic!("{err}")
         };
@@ -159,7 +159,7 @@ impl EventHandler for Handler {
                 let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
                 let database = database_lock.write().await;
 
-                let if_guild_role_exists = sqlx::query(&format!("SELECT role_id FROM guilds where guild_id = '{}'", &guild_id))
+                let if_guild_role_exists = sqlx::query(&format!("SELECT role_id FROM moderated_role where guild_id = '{}'", &guild_id))
                     .fetch_one(&*database)
                     .await;
                 match if_guild_role_exists {

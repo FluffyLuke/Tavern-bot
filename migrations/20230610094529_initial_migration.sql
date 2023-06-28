@@ -3,12 +3,8 @@ create table banned_words (
     banned_word VARCHAR(30) NOT NULL
 );
 
-create table modetated_role (
+create table guild (
     guild_id VARCHAR(30) NOT NULL,
-    role_id VARCHAR(30) NOT NULL
-);
-
-create table basic_role (
-    guild_id VARCHAR(30) NOT NULL,
-    role_id VARCHAR(30) NOT NULL
+    moderated_role_id VARCHAR(30) NOT NULL,
+    basic_role_id VARCHAR(30) NOT NULL
 );
