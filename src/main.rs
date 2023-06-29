@@ -20,12 +20,10 @@ mod commands;
 mod database;
 mod hooks;
 mod quotes;
-mod utils;
 use crate::quotes::Quotes;
 use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*};
 use crate::database::Database;
 use crate::hooks::unknown_command::unknown_command;
-use utils::*;
 
 #[group]
 #[owners_only]
