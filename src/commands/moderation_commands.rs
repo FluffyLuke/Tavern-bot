@@ -7,8 +7,7 @@ use serenity::client::Context;
 use serenity::model::prelude::Message;
 use crate::database::Database;
 use crate::quotes::Quotes;
-use crate::{utils::Mode, ctx_get_lock};
-
+use crate::ctx_get_lock;
 #[command]
 #[allowed_roles("Bar Owner")]
 pub async fn create_server_profile(ctx: &Context, msg: &Message, args: Args) -> CommandResult {

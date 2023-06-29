@@ -5,6 +5,7 @@ create table banned_words (
 
 create table guild (
     guild_id VARCHAR(30) NOT NULL,
-    moderated_role_id VARCHAR(30) NOT NULL,
-    basic_role_id VARCHAR(30) NOT NULL
+    moderated_role_id VARCHAR(30),
+    basic_role_id VARCHAR(30),
+    PRIMARY KEY (guild_id)
 );
