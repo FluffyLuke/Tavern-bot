@@ -12,8 +12,8 @@ use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 use serenity::model::channel::{/*Channel,*/ Message};
 use serenity::framework::standard::StandardFramework;
-use sqlx::Row;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteConnectOptions};
+// use sqlx::Row;
 use serenity::model::prelude::Member;
 
 mod commands;
@@ -109,6 +109,8 @@ async fn main() {
     }
 
 }
+
+//TODO Add auto removal of data from old guilds.
 struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
@@ -118,52 +120,54 @@ impl EventHandler for Handler {
     }
 
     async fn guild_member_addition(&self, ctx: Context, mut new_member: Member) {
-        let query_basic_role;
+        let query;
         let guild_id_str = new_member.guild_id.to_string();
         {
-            let data_read = ctx.data.write().await;
-            let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
-            let database = database_lock.write().await;
-            query_basic_role = sqlx::query!("Select basic_role_id from guild where guild_id = ?", guild_id_str)
+            let data_read = ctx.data.read().await;
+            let lock = data_read.get::<Database>().expect("Cannot get the lock");
+            let database = lock.read().await;
+            query = sqlx::query!("Select basic_role_id from guild where guild_id = ?", guild_id_str)
                 .fetch_one(&*database)
                 .await;
         }
-        let basic_role_str = match query_basic_role {
-            Ok(id) => id,
-            Err(err) => panic!("{err}")
+        let basic_role = match query {
+            Err(err) => panic!("{err}"),
+            Ok(record) => {
+                record.basic_role_id
+                    .expect("Error retrieving basic role from database")
+                    .parse::<u64>()
+                    .expect("Cannot parse id to u64")
+            }
         };
-        let basic_role_u64 = match basic_role_str.basic_role_id.parse::<u64>() {
-            Ok(id) => id,
-            Err(err) => panic!("{err}")
-        };
-        if let Err(err) = new_member.add_role(&ctx.http, basic_role_u64).await {
+        if let Err(err) = new_member.add_role(&ctx.http, basic_role).await {
             panic!("{err}");
         }
     }
 
     async fn message(&self, ctx: Context, mut msg: Message) {
-        msg.content = msg.content.to_lowercase();
-        msg.content = msg.content.replace(" ", "");
         if msg.author.bot {
             return;
         }
+        msg.content = msg.content.to_lowercase();
+        msg.content = msg.content.replace(" ", "");
+
         let moderated_role: String;
         let banned_words;
 
         //Check for banned words
         if let Some(guild_id) = msg.guild_id {
             {
-                let data_read = ctx.data.write().await;
-                let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
-                let database = database_lock.write().await;
-
-                let if_guild_role_exists = sqlx::query(&format!("SELECT role_id FROM moderated_role where guild_id = '{}'", &guild_id))
+                let guild_id = guild_id.to_string();
+                let data_read = ctx.data.read().await;
+                let lock = data_read.get::<Database>().expect("Cannot get the lock");
+                let database = lock.read().await;
+                let if_moderated_role_exists = sqlx::query!("SELECT moderated_role_id FROM guild where guild_id = ?", guild_id)
                     .fetch_one(&*database)
                     .await;
-                match if_guild_role_exists {
-                    Ok(row) => { 
-                        moderated_role = row.get("role_id");
-                        banned_words = sqlx::query(&format!("SELECT banned_word FROM banned_words where guild_id = '{}'", &guild_id))
+                match if_moderated_role_exists {
+                    Ok(record) => { 
+                        moderated_role = record.moderated_role_id.unwrap();
+                        banned_words = sqlx::query!("SELECT banned_word FROM banned_words where guild_id = ?", guild_id)
                             .fetch_all(&*database)
                             .await;
                     }
@@ -176,10 +180,9 @@ impl EventHandler for Handler {
             if let Ok(rows) = banned_words {
                 if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("Cannot parse the id")).await {
                     for row in rows.iter() {
-                        let banned_word: String = row.get("banned_word");
-                        if msg.content.contains(&banned_word) {
+                        if msg.content.contains(&row.banned_word) {
                             msg.delete(&ctx.http).await.expect("Cannot delete a message");
-                            let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(banned_word).build();
+                            let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(&row.banned_word).build();
                             msg.author.dm(&ctx.http, |m| m.content(&response) ).await.expect("Cannot send message");
                         }
                     }

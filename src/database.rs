@@ -9,20 +9,18 @@ impl TypeMapKey for Database {
 }
 
 #[macro_export]
-macro_rules! ctx_get_lock {
-    ($ctx:expr, $type:ty, Mode::Write) => {{
-        let data_read = $ctx.data.write().await;
-        let quote_lock = data_read.get::<$type>().expect("Cannot get the lock");
-        quote_lock.write().await
-    }};
-    ($ctx:expr, $type:ty, Mode::Read) => {{
+macro_rules! guild_inited {
+    ($ctx:expr, $id:expr) => {{
         let data_read = $ctx.data.read().await;
-        let quote_lock = data_read.get::<$type>().expect("Cannot get the lock");
-        quote_lock.read().await
+        let lock = data_read.get::<Database>().expect("Cannot get the lock");
+        let database = lock.read().await;
+        let query = sqlx::query!("Select * from guild where guild_id = ?", $id)
+            .fetch_one(&*database)
+            .await;
+        if let Err(_) = query { 
+            sqlx::query!("Insert into guild (guild_id) values (?)", $id)
+                .execute(&*database)
+                .await?;
+        }
     }};
-}
-
-pub enum Mode {
-    Write,
-    Read,
 }
