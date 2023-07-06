@@ -7,6 +7,7 @@ use serenity::client::Context;
 use serenity::model::prelude::Message;
 use serenity::utils::MessageBuilder;
 use crate::database::Database;
+use crate::guild::GuildDescription;
 use crate::quotes::Quotes;
 #[command]
 async fn make_sandwich(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
@@ -47,30 +48,22 @@ async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 }
 
 #[command]
+#[only_in(guilds)]
 async fn see_banned_words(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let mut response = MessageBuilder::new();
-    let query;
-    let guild_id;
-
-    if let Some(id) = msg.guild_id {
-        guild_id = id.to_string()
-    } else {
-        msg.channel_id.say(&ctx.http, "This command must be used in guild").await?;
-        return Ok(());
-    }
-
+    let banned_words;
+    let guild_id = msg.guild_id.unwrap().to_string();
+    let guild_description;
     {
         let data_read = ctx.data.write().await;
         let database_lock = data_read.get::<Database>().expect("Cannot find database in TypeMap").clone();
-        let database = database_lock.write().await;
-
-        query = sqlx::query!("SELECT * FROM banned_words where guild_id = ?", guild_id)
-            .fetch_all(&*database)
-            .await?;
+        let database = &*database_lock.write().await;
+        guild_description = GuildDescription::build(database, &guild_id).await?;
+        banned_words = guild_description.get_banned_words();
     }
     response.push("List of banned words: ");
-    for word in query.iter() {
-        response.push_bold(word.banned_word.as_str());
+    for word in banned_words.iter() {
+        response.push_bold(word);
         response.push(", ");
     }
     response.build();

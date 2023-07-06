@@ -4,6 +4,7 @@ use std::collections::{HashSet, /*HashMap*/};
 use std::sync::Arc;
 use std::fs;
 
+use guild::GuildDescription;
 use serenity::utils::MessageBuilder;
 use serenity::async_trait;
 use serenity::http::Http;
@@ -20,6 +21,7 @@ mod commands;
 mod database;
 mod hooks;
 mod quotes;
+mod guild;
 use crate::quotes::Quotes;
 use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*};
 use crate::database::Database;
@@ -36,7 +38,7 @@ struct Owners;
 struct Admin;
 
 #[group]
-#[commands ("say", "make_sandwich", "see_banned_words")]
+#[commands ("say", "make_sandwich", "see_banned_words", "describe_server")]
 struct General;
 
 #[tokio::main]
@@ -120,27 +122,18 @@ impl EventHandler for Handler {
     }
 
     async fn guild_member_addition(&self, ctx: Context, mut new_member: Member) {
-        let query;
-        let guild_id_str = new_member.guild_id.to_string();
+        let guild_description;
         {
             let data_read = ctx.data.read().await;
             let lock = data_read.get::<Database>().expect("Cannot get the lock");
-            let database = lock.read().await;
-            query = sqlx::query!("Select basic_role_id from guild where guild_id = ?", guild_id_str)
-                .fetch_one(&*database)
-                .await;
+            let database = &*lock.read().await;
+            guild_description = GuildDescription::build(database, &new_member.guild_id.to_string()).await.unwrap();
         }
-        let basic_role = match query {
-            Err(err) => panic!("{err}"),
-            Ok(record) => {
-                record.basic_role_id
-                    .expect("Error retrieving basic role from database")
-                    .parse::<u64>()
-                    .expect("Cannot parse id to u64")
-            }
-        };
-        if let Err(err) = new_member.add_role(&ctx.http, basic_role).await {
-            panic!("{err}");
+        if let Some(id) = guild_description.get_basic_role_id() {
+            new_member.add_role(&ctx.http, id.parse::<u64>()
+                .expect("Error parsing id for basic role"))
+                .await
+                .expect("Error adding basic role");
         }
     }
 
@@ -151,38 +144,20 @@ impl EventHandler for Handler {
         msg.content = msg.content.to_lowercase();
         msg.content = msg.content.replace(" ", "");
 
-        let moderated_role: String;
-        let banned_words;
-
-        //Check for banned words
         if let Some(guild_id) = msg.guild_id {
+            let guild_description;
             {
-                let guild_id = guild_id.to_string();
                 let data_read = ctx.data.read().await;
                 let lock = data_read.get::<Database>().expect("Cannot get the lock");
-                let database = lock.read().await;
-                let if_moderated_role_exists = sqlx::query!("SELECT moderated_role_id FROM guild where guild_id = ?", guild_id)
-                    .fetch_one(&*database)
-                    .await;
-                match if_moderated_role_exists {
-                    Ok(record) => { 
-                        moderated_role = record.moderated_role_id.unwrap();
-                        banned_words = sqlx::query!("SELECT banned_word FROM banned_words where guild_id = ?", guild_id)
-                            .fetch_all(&*database)
-                            .await;
-                    }
-                    Err(err) => { 
-                        banned_words = Err(err);
-                        moderated_role = "".to_string();
-                    }
-                }
+                let database = &*lock.read().await;
+                guild_description = GuildDescription::build(database, &guild_id.to_string()).await.unwrap();
             }
-            if let Ok(rows) = banned_words {
-                if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().expect("Cannot parse the id")).await {
-                    for row in rows.iter() {
-                        if msg.content.contains(&row.banned_word) {
+            if let Some(moderated_role) = guild_description.get_moderated_role_id() {
+                if let Ok(true) = msg.author.has_role(&ctx.http, guild_id, moderated_role.parse::<u64>().unwrap()).await {
+                    for word in guild_description.get_banned_words().iter() {
+                        if msg.content.contains(word) {
                             msg.delete(&ctx.http).await.expect("Cannot delete a message");
-                            let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(&row.banned_word).build();
+                            let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(word).build();
                             msg.author.dm(&ctx.http, |m| m.content(&response) ).await.expect("Cannot send message");
                         }
                     }
