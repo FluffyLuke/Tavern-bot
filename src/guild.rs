@@ -95,7 +95,7 @@ impl GuildDescription {
             response.push_italic_line("None");
         } else {
             for word in self.get_banned_words().iter() {
-                response.push_bold_line(word);
+                response.push("> ").push_bold_line(word);
             }
         }
         response.build()
@@ -110,13 +110,14 @@ impl GuildDescription {
         self.moderated_role_id = Some(moderated_role);
         Ok(())
     }
-    pub async fn delete_moderated_role<'a, D>(&self, database: D) -> Result<(), sqlx::Error> 
+    pub async fn delete_moderated_role<'a, D>(&mut self, database: D) -> Result<(), sqlx::Error> 
     where
         D: Executor<'a, Database = Sqlite>
     {
         sqlx::query!("update guild set moderated_role_id = NULL where guild_id = ?", self.guild_id)
             .execute(database)
             .await?;
+        self.moderated_role_id = None;
         Ok(())
     }
     pub async fn add_word_to_moderate<'a, D>(&mut self, database: D, word: String) -> Result<(), sqlx::Error> 
@@ -145,6 +146,28 @@ impl GuildDescription {
     where
     {
         &self.banned_words
+    }
+
+    pub async fn create_basic_role<'a, D>(&mut self, database: D, basic_role: String) -> Result<(), sqlx::Error> 
+    where
+        D: Executor<'a, Database = Sqlite>
+    {
+        sqlx::query!("update guild set basic_role_id = (?) where guild_id = ?", basic_role, self.guild_id)
+            .execute(database)
+            .await?;
+        self.basic_role_id = Some(basic_role);
+        Ok(())
+    }
+
+    pub async fn delete_basic_role<'a, D>(&mut self, database: D) -> Result<(), sqlx::Error> 
+    where
+        D: Executor<'a, Database = Sqlite>
+    {
+        sqlx::query!("update guild set basic_role_id = NULL where guild_id = ?", self.guild_id)
+            .execute(database)
+            .await?;
+        self.basic_role_id = None;
+        Ok(())
     }
 }
 

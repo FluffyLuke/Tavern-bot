@@ -23,22 +23,28 @@ mod hooks;
 mod quotes;
 mod guild;
 use crate::quotes::Quotes;
-use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*};
+use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*, server_utils_commands::*};
 use crate::database::Database;
 use crate::hooks::unknown_command::unknown_command;
 
 #[group]
 #[owners_only]
-#[commands("test_command", "test_quotes")]
+#[commands(test_command, test_quotes)]
 struct Owners;
 
 #[group]
-#[commands("add_moderated_role", "delete_moderated_role", "add_words_to_moderate", "remove_words_to_moderate")]
+#[only_in(guilds)]
+#[commands(banned_words, moderated_role, basic_role)]
 #[description = "Commands for server admins/moderators"]
 struct Admin;
 
 #[group]
-#[commands ("say", "make_sandwich", "see_banned_words", "describe_server")]
+#[only_in(guilds)]
+#[commands (server)]
+struct ServerUtils;
+
+#[group]
+#[commands (say, make_sandwich)]
 struct General;
 
 #[tokio::main]
@@ -74,7 +80,7 @@ async fn main() {
             c.owners(owners)
             .prefix(prefix)
             .with_whitespace(true)
-        ).group(&OWNERS_GROUP).group(&GENERAL_GROUP).group(&ADMIN_GROUP)
+        ).group(&OWNERS_GROUP).group(&GENERAL_GROUP).group(&ADMIN_GROUP).group(&SERVERUTILS_GROUP)
         .unrecognised_command(unknown_command);
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
