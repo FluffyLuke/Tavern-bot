@@ -5,7 +5,8 @@ pub struct GuildDescription<> {
     guild_id: String,
     moderated_role_id: Option<String>,
     basic_role_id: Option<String>,
-    banned_words: Vec<String>
+    banned_words: Vec<String>,
+    log_channel_id: Option<String>,
 }
 
 
@@ -35,6 +36,7 @@ impl GuildDescription {
                 moderated_role_id: guild_record.moderated_role_id,
                 basic_role_id: guild_record.basic_role_id,
                 banned_words: banned_words,
+                log_channel_id: guild_record.log_channel_id,
                 }) 
             },
             Err(sqlx::Error::RowNotFound) => {
@@ -46,6 +48,7 @@ impl GuildDescription {
                     moderated_role_id: Some("ERR".to_string()),
                     basic_role_id: Some("ERR".to_string()),
                     banned_words: Vec::<String>::new(),
+                    log_channel_id: Some("ERR".to_string()),
                 })
             },
             Err(err) => return Err(err), 
@@ -67,6 +70,12 @@ impl GuildDescription {
         }
         None
     }
+    pub fn get_log_channel_id(&self) -> Option<&str> {
+        if let Some(id) = &self.log_channel_id {
+            return Some(&id)
+        }
+        None
+    }
     pub fn guild_description_msg(&self) -> String{
         let mut response = MessageBuilder::new();
         
@@ -84,6 +93,14 @@ impl GuildDescription {
         // Basic role
         response.push("Id of basic role: ");
         if let Some(id) = self.get_basic_role_id() {
+            response.push_bold_line(id);
+        } else {
+            response.push_italic_line("None");
+        }
+
+        // Logs
+        response.push("Id of log channel ");
+        if let Some(id) = self.get_log_channel_id() {
             response.push_bold_line(id);
         } else {
             response.push_italic_line("None");
@@ -169,10 +186,37 @@ impl GuildDescription {
         self.basic_role_id = None;
         Ok(())
     }
+
+    pub async fn create_log_channel<'a, D>(&mut self, database: D, log_channel_id: String) -> Result<(), sqlx::Error> 
+    where
+        D: Executor<'a, Database = Sqlite>
+    {
+        sqlx::query!("update guild set log_channel_id = (?) where guild_id = ?", log_channel_id, self.guild_id)
+            .execute(database)
+            .await?;
+        self.log_channel_id = Some(log_channel_id);
+        Ok(())
+    }
+
+    pub async fn delete_log_channel<'a, D>(&mut self, database: D) -> Result<(), sqlx::Error> 
+    where
+        D: Executor<'a, Database = Sqlite>
+    {
+        sqlx::query!("update guild set log_channel_id = NULL where guild_id = ?", self.guild_id)
+            .execute(database)
+            .await?;
+        self.basic_role_id = None;
+        Ok(())
+    }
 }
 
 pub fn strip_mention(mention :&str) -> &str {
     if let Some(stripped_prefix) = mention.strip_prefix("<@&") {
+        if let Some(stripped_suffix) = stripped_prefix.strip_suffix(">") {
+            return stripped_suffix
+        }
+    };
+    if let Some(stripped_prefix) = mention.strip_prefix("<#") {
         if let Some(stripped_suffix) = stripped_prefix.strip_suffix(">") {
             return stripped_suffix
         }

@@ -7,11 +7,11 @@ use serenity::client::Context;
 use serenity::model::prelude::Message;
 
 
-use crate::database::{Database};
+use crate::database::Database;
 use crate::quotes::Quotes;
 use crate::guild::{GuildDescription, strip_mention};
 use serenity::utils::MessageBuilder;
-use serenity::model::prelude::RoleId;
+use serenity::model::prelude::{RoleId, ChannelId};
 
 
 
@@ -225,13 +225,12 @@ async fn remove_moderated_role(ctx: &Context, msg: &Message, _args: Args) -> Com
 #[aliases("show")]
 pub async fn show_moderated_role(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let guild_id = msg.guild_id.unwrap().to_string();
-    let mut guild_description;
+    let guild_description;
     {
         let data_read = ctx.data.read().await;
         let lock = data_read.get::<Database>().expect("Cannot get the lock");
         let database = &*lock.read().await;
         guild_description = GuildDescription::build(database, &guild_id).await?;
-        guild_description.delete_basic_role(database).await?;
     }
     let mut response = MessageBuilder::new();
     response.push("Moderated role: ");
@@ -253,13 +252,13 @@ pub async fn basic_role(ctx: &Context, msg: &Message, _args: Args) -> CommandRes
         .push_line("You can use:")
         .push("> basic_role ").push_bold_line("add {role id/role ping}")
         .push("> basic_role ").push_bold_line("remove {role id/role ping}")
-        .push("> basic_role ").push_bold_line("show {role id/role ping}")
-        .build();
+        .push("> basic_role ").push_bold_line("show {role id/role ping}");
     msg.channel_id.say(&ctx.http, response).await?;
     Ok(())
 }
 
 #[command]
+#[allowed_roles("Bar Owner")]
 #[aliases("add")]
 pub async fn add_basic_role(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let guild_id = msg.guild_id.unwrap().to_string();
@@ -323,6 +322,7 @@ pub async fn add_basic_role(ctx: &Context, msg: &Message, args: Args) -> Command
 }
 
 #[command]
+#[allowed_roles("Bar Owner")]
 #[aliases("remove")]
 pub async fn remove_basic_role(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let guild_id = msg.guild_id.unwrap().to_string();
@@ -332,7 +332,7 @@ pub async fn remove_basic_role(ctx: &Context, msg: &Message, _args: Args) -> Com
         let lock = data_read.get::<Database>().expect("Cannot get the lock");
         let database = &*lock.read().await;
         guild_description = GuildDescription::build(database, &guild_id).await?;
-        guild_description.delete_moderated_role(database).await?;
+        guild_description.delete_basic_role(database).await?;
     }
 
     msg.channel_id.say(&ctx.http, "I removed the basic role").await?;
@@ -350,17 +350,144 @@ pub async fn remove_basic_role(ctx: &Context, msg: &Message, _args: Args) -> Com
 #[aliases("show")]
 pub async fn show_basic_role(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let guild_id = msg.guild_id.unwrap().to_string();
+    let guild_description;
+    {
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Database>().expect("Cannot get the lock");
+        let database = &*lock.read().await;
+        guild_description = GuildDescription::build(database, &guild_id).await?;
+    }
+    let mut response = MessageBuilder::new();
+    response.push("Basic role: ");
+    if let Some(id) = guild_description.get_basic_role_id() {
+        response.push_bold(id);
+    } else {
+        response.push_italic("None");
+    }
+    msg.channel_id.say(&ctx.http, response).await?;
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("Bar Owner")]
+#[sub_commands("add_log_channel", "remove_log_channel", "show_log_channel")]
+pub async fn logs(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let mut response = MessageBuilder::new();
+    response.push_line("You need to specify what to do, dumbass!")
+        .push_line("You can use:")
+        .push("> logs ").push_bold_line("add {channel id/channel ping}")
+        .push("> logs ").push_bold_line("remove {channel id/channel ping}")
+        .push("> logs ").push_bold_line("show {channel id/channel ping}");
+    msg.channel_id.say(&ctx.http, response).await?;
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("Bar Owner")]
+#[aliases("add")]
+pub async fn add_log_channel(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap().to_string();
     let mut guild_description;
     {
         let data_read = ctx.data.read().await;
         let lock = data_read.get::<Database>().expect("Cannot get the lock");
         let database = &*lock.read().await;
         guild_description = GuildDescription::build(database, &guild_id).await?;
-        guild_description.delete_basic_role(database).await?;
+    }
+
+    if let Some(logs_channel_id) = guild_description.get_log_channel_id(){
+        let mut response = MessageBuilder::new();
+        response.push("Guild already has log channel: ").push_bold(logs_channel_id);
+        msg.channel_id.say(&ctx.http, response).await?;
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Quotes>().expect("Cannot get the lock");
+        let quotes = lock.read().await;
+        msg.channel_id.say(&ctx.http, quotes.random_mean_quote()).await?;
+        return Ok(());
+    }
+
+
+    if let Some(logs_channel_id) = args.current() {
+        println!("{}",logs_channel_id);
+        println!("{}",logs_channel_id);
+        let logs_channel_id = strip_mention(logs_channel_id);
+        let parsed_logs_channel_id = logs_channel_id.parse::<u64>();
+        if let Err(_) = parsed_logs_channel_id {
+            let data_read = ctx.data.read().await;
+            let lock = data_read.get::<Quotes>().expect("Cannot get the lock");
+            let quotes = lock.read().await;
+            msg.channel_id.say(&ctx.http, "You have provided wrong id! Id cannot contain letters. You can also ping the chat you want to store logs in.").await?;
+            msg.channel_id.say(&ctx.http, quotes.random_mean_quote()).await?;
+            return Ok(());
+        }
+        {
+            let data_read = ctx.data.read().await;
+            let lock = data_read.get::<Database>().expect("Cannot get the lock");
+            let database = &*lock.read().await;
+            let str_copy_logs_channel_id = parsed_logs_channel_id.clone().unwrap().to_string();
+            guild_description.create_log_channel(database, str_copy_logs_channel_id).await?;
+        }
+        let parsed_logs_channel_id: ChannelId = ChannelId::from(parsed_logs_channel_id.unwrap());
+        let response = MessageBuilder::new().push("I will now send logs on channel ").mention(&parsed_logs_channel_id).build();
+        msg.channel_id.say(&ctx.http, response).await?;
+    } else {
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Quotes>().expect("Cannot get the lock");
+        let quotes = lock.read().await;
+        msg.channel_id.say(&ctx.http, "You should specify the basic role!").await?;
+        msg.channel_id.say(&ctx.http, quotes.random_mean_quote()).await?;
+        return Ok(());
+    }
+    
+    {
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Quotes>().expect("Cannot get the lock");
+        let quotes = lock.read().await;
+        msg.channel_id.say(&ctx.http, quotes.random_neutral_quote()).await?;
+    }
+    Ok(())
+}
+
+#[command]
+#[allowed_roles("Bar Owner")]
+#[aliases("remove")]
+pub async fn remove_log_channel(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap().to_string();
+    let mut guild_description;
+    {
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Database>().expect("Cannot get the lock");
+        let database = &*lock.read().await;
+        guild_description = GuildDescription::build(database, &guild_id).await?;
+        guild_description.delete_log_channel(database).await?;
+    }
+
+    msg.channel_id.say(&ctx.http, "I removed the log channel").await?;
+
+    {
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Quotes>().expect("Cannot get the lock");
+        let quotes = lock.read().await;
+        msg.channel_id.say(&ctx.http, quotes.random_neutral_quote()).await?;
+    }
+
+    Ok(())
+}
+
+#[command]
+#[aliases("show")]
+pub async fn show_log_channel(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap().to_string();
+    let guild_description;
+    {
+        let data_read = ctx.data.read().await;
+        let lock = data_read.get::<Database>().expect("Cannot get the lock");
+        let database = &*lock.read().await;
+        guild_description = GuildDescription::build(database, &guild_id).await?;
     }
     let mut response = MessageBuilder::new();
-    response.push("Basic role: ");
-    if let Some(id) = guild_description.get_basic_role_id() {
+    response.push("Log channel: ");
+    if let Some(id) = guild_description.get_log_channel_id() {
         response.push_bold(id);
     } else {
         response.push_italic("None");

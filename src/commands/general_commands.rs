@@ -7,6 +7,8 @@ use serenity::client::Context;
 use serenity::model::prelude::Message;
 use serenity::utils::MessageBuilder;
 use crate::quotes::Quotes;
+use crate::database::CommandDescriptions;
+
 #[command]
 async fn make_sandwich(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
     let response = MessageBuilder::new()
@@ -42,5 +44,22 @@ async fn say(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         }
     }
     msg.reply(&ctx.http, response).await?; 
+    Ok(())
+}
+
+#[command]
+async fn help(ctx: &Context, msg: &Message, _args: Args) -> CommandResult {
+    let mut response = MessageBuilder::new();
+    response.push_line("These are command descriptions: ");
+    {
+        let data_read = ctx.data.read().await;
+        let descriptions_lock = data_read.get::<CommandDescriptions>().expect("Cannot get command descriptions lock");
+        let command_descriptions = &*descriptions_lock.read().await;
+        for (key, value) in &command_descriptions.descriptions {
+            response.push(key).push(": ").push_bold_line(value);
+        }
+    }
+    let response = response.build();
+    msg.channel_id.say(&ctx.http, response).await?;
     Ok(())
 }

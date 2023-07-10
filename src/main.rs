@@ -1,6 +1,6 @@
 use core::panic;
 use std::{env, /*clone*/};
-use std::collections::{HashSet, /*HashMap*/};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::fs;
 
@@ -15,7 +15,7 @@ use serenity::model::channel::{/*Channel,*/ Message};
 use serenity::framework::standard::StandardFramework;
 use sqlx::sqlite::{SqlitePoolOptions, SqliteConnectOptions};
 // use sqlx::Row;
-use serenity::model::prelude::Member;
+use serenity::model::prelude::{Member, ChannelId};
 
 mod commands;
 mod database;
@@ -24,7 +24,7 @@ mod quotes;
 mod guild;
 use crate::quotes::Quotes;
 use crate::commands::{general_commands::*, test_commands::*, moderation_commands::*, server_utils_commands::*};
-use crate::database::Database;
+use crate::database::{Database, split_at, CommandDescriptions};
 use crate::hooks::unknown_command::unknown_command;
 
 #[group]
@@ -34,7 +34,7 @@ struct Owners;
 
 #[group]
 #[only_in(guilds)]
-#[commands(banned_words, moderated_role, basic_role)]
+#[commands(banned_words, moderated_role, basic_role, logs)]
 #[description = "Commands for server admins/moderators"]
 struct Admin;
 
@@ -44,7 +44,7 @@ struct Admin;
 struct ServerUtils;
 
 #[group]
-#[commands (say, make_sandwich)]
+#[commands (say, make_sandwich, help)]
 struct General;
 
 #[tokio::main]
@@ -103,11 +103,15 @@ async fn main() {
             .lines()
             .map(String::from)
             .collect();
-
     let quotes = Quotes::new(mean_quotes, neutral_quotes, pleasant_quotes);
-    println!("{}", quotes.random_neutral_quote());
+
+    let command_descriptions = split_at(';', "command_descriptions/command_descriptions.txt")
+        .unwrap_or_else(|err| panic!("Cannot initialize command descriptions: {err}"));
+    let command_descriptions = CommandDescriptions::new(command_descriptions);
+
     {
         let mut data = client.data.write().await;
+        data.insert::<CommandDescriptions>(Arc::new(RwLock::new(command_descriptions)));
         data.insert::<Database>(Arc::new(RwLock::new(database)));
         data.insert::<Quotes>(Arc::new(RwLock::new(quotes)))
     }
@@ -163,8 +167,20 @@ impl EventHandler for Handler {
                     for word in guild_description.get_banned_words().iter() {
                         if msg.content.contains(word) {
                             msg.delete(&ctx.http).await.expect("Cannot delete a message");
-                            let response = MessageBuilder::new().mention(&msg.author).push(" you cannot say ").push_italic(word).build();
-                            msg.author.dm(&ctx.http, |m| m.content(&response) ).await.expect("Cannot send message");
+                            let response_to_user = MessageBuilder::new()
+                                .mention(&msg.author)
+                                .push(" you cannot say ")
+                                .push_italic(word).build();
+                            let response_to_log_channel = MessageBuilder::new()
+                            .mention(&msg.author)
+                            .push_line(" said bad things:")
+                            .push_bold(&msg.content).build();
+                            msg.author.dm(&ctx.http, |m| m.content(&response_to_user) ).await.expect("Cannot send message");
+                            if let Some(id) = guild_description.get_log_channel_id() {
+                                let id = id.parse::<u64>().expect("Cannot parse id of a log channel");
+                                let id = ChannelId::from(id);
+                                id.say(&ctx.http, response_to_log_channel).await.unwrap();
+                            }
                         }
                     }
                 }
@@ -172,5 +188,4 @@ impl EventHandler for Handler {
         }
     }
 }
-
 

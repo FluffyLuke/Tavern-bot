@@ -1,0 +1,5 @@
+banned_word;This command is used to set, remove and see banned words.
+moderated_role;This command is used to set, remove and see role that is moderated by the bot (bot deletes messages with banned words).
+basic_role;This command is used to set, remove and see role that is added to a user on server join.
+server;This command is used to see server properties.
+make_sandwich;Bot makes you a sandwich.
